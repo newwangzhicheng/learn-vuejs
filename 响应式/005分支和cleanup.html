@@ -28,8 +28,19 @@
 
     // 负责注册并执行副作用函数
     function effect(fn) {
-      activeEffect = fn
-      fn()
+      // 这里为什么又要创建一个新的函数呢
+      // 因为要在上面添加deps属性，不能污染传入的fn
+      function effectFn() {
+        // 每次执行前先将副作用函数从依赖集合中清除
+        cleanup(effectFn)
+        activeEffect = effectFn
+        // 执行副作用函数
+        fn()
+      }
+      // 创建一个数组，收集依赖这个副作用的集合
+      effectFn.deps = []
+      effectFn()
+
     }
 
     // 追踪副作用
@@ -50,6 +61,8 @@
       const deps = depsMap.get(key)
       // 收集依赖
       deps.add(activeEffect)
+      // 在收集依赖的时候，副作用函数也在收集依赖它的集合
+      activeEffect.deps.push(deps)
     }
 
     // 触发副作用
@@ -64,6 +77,16 @@
       }
       deps.forEach((fn) => fn())
       return true
+    }
+
+    // 清除集合中依赖的副作用函数
+    function cleanup(fn) {
+      for(let i = 0; i < fn.deps.length; i++) {
+        const deps = fn.deps[i]
+        deps.delete(fn)
+      }
+      // 清空数组
+      fn.deps.length = 0
     }
 
     effect(() => {
