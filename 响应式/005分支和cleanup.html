@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<script>
+    let activeEffect
+    // 最外层的桶
+    const bucket = new WeakMap()
+
+    const data = {
+      ok: true,
+      text: 'hello world'
+    }
+    const obj = new Proxy(data, {
+      get(target, key) {
+        track(target, key)
+        return target[key]
+      },
+      set(target, key, value) {
+        target[key] = value
+        trigger(target, key)
+        return true
+      }
+    })
+
+    // 负责注册并执行副作用函数
+    function effect(fn) {
+      activeEffect = fn
+      fn()
+    }
+
+    // 追踪副作用
+    function track(target, key) {
+      // 如果没有effect函数，直接返回
+      if(!activeEffect) {
+        return target[key]
+      }
+      // 根据对象target找到对应的depsMaps
+      if(!bucket.get(target)) {
+        bucket.set(target, new Map())
+      }
+      const depsMap = bucket.get(target)
+      // 根据属性key找到对应的deps
+      if(!depsMap.get(key)) {
+        depsMap.set(key, new Set())
+      }
+      const deps = depsMap.get(key)
+      // 收集依赖
+      deps.add(activeEffect)
+    }
+
+    // 触发副作用
+    function trigger(target, key) {
+      const depsMap = bucket.get(target)
+      if (!depsMap) {
+        return true
+      }
+      const deps = depsMap.get(key)
+      if (!deps) {
+        return true
+      }
+      deps.forEach((fn) => fn())
+      return true
+    }
+
+    effect(() => {
+      console.log('effect')
+      document.body.innerText = obj.ok ? obj.text : 'not'
+    })
+    setTimeout(() => {
+      obj.notExist = 'Goodbye World!' // 不会触发effect
+      obj.ok = false
+      obj.text = 'Goodbye World!'
+    }, 2000)
+</script>
+</body>
+</html>

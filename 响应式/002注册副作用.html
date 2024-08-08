@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<script>
+    let activeEffect
+    const bucket = new Set()
+    const data = { text: 'hello world' }
+    const obj = new Proxy(data, {
+      get(target, key) {
+        if(activeEffect) {
+          bucket.add(activeEffect)
+        }
+        return target[key]
+      },
+      set(target, key, value) {
+        target[key] = value
+        bucket.forEach((fn) => fn())
+        return true
+      }
+    })
+
+    // 负责注册并执行副作用函数
+    function effect(fn) {
+      activeEffect = fn
+      fn()
+    }
+
+    effect(() => {
+      console.log('effect')
+      document.body.innerText = obj.text
+    })
+    setTimeout(() => {
+      obj.not = 'Goodbye World!'
+    }, 2000)
+</script>
+</body>
+</html>
