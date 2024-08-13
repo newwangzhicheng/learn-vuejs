@@ -6,32 +6,13 @@
 </head>
 <body>
 <script>
-  // 调度器
-  // 任务队列，具有去重功能，保证相同的副作用函数只会执行一次
-  const jobQueue = new Set()
-  // 保证一个内只会执行一次
-  let isFlushing = false
-  function flushJob() {
-    if(isFlushing) {
-      return
-    }
-    isFlushing = true
-    const p = Promise.resolve()
-    p.then(() => {
-      jobQueue.forEach((fn) => fn())
-    }).finally(() => {
-      isFlushing = false
-    })
-  }
-</script>
-<script>
   let activeEffect
   // 最外层的桶
   const bucket = new WeakMap()
 
   const data = {
-    foo: true,
-    bar: 1
+    foo: 1,
+    bar: 2
   }
   const obj = new Proxy(data, {
     get(target, key) {
@@ -64,16 +45,24 @@
       // 将当前执行的函数压入栈中
       effectStack.push(effectFn)
       // 执行副作用函数
-      fn()
+      // 希望执行副作用函数的时候能够获取到副作用的返回值
+      const res = fn()
       // 执行完成后将副作用函数出栈，让activeEffect指向外层的effect
       effectStack.pop()
       activeEffect = effectStack.at(-1)
+      return res
     }
     // 添加选项，包含scheduler调度执行
     effectFn.options = options
     // 创建一个数组，收集依赖这个副作用的集合
     effectFn.deps = []
-    effectFn()
+    // 根据options.lazy的状态判断是否要执行
+    if(!effectFn.options.lazy) {
+      effectFn()
+    }
+    // 执行effect的时候获取到副作用函数
+    // 以便于手动触发
+    return effectFn
   }
 
   // 清除集合中依赖的副作用函数
@@ -136,19 +125,21 @@
     return true
   }
 
-
-  effect(
-          () => {console.log(obj.bar)},
-          // 添加options.scheduler调度器
-          {
-            scheduler(fn) {
-              jobQueue.add(fn)
-              flushJob()
-            }
-          }
+</script>
+<script>
+  const effectFn = effect(
+    () => {
+      console.log('执行了副作用函数')
+      return obj.foo + obj.bar
+    },
+    {
+      lazy: false
+    }
   )
-  obj.bar++
-  obj.bar++
+  setTimeout(() => {
+    const value = effectFn()
+    console.log('value', value)
+  }, 2000)
 </script>
 </body>
 </html>
