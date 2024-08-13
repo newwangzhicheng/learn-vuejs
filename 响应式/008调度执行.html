@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+</head>
+<body>
+<script>
+  let activeEffect
+  // 最外层的桶
+  const bucket = new WeakMap()
+
+  const data = {
+    foo: true,
+    bar: 1
+  }
+  const obj = new Proxy(data, {
+    get(target, key) {
+      track(target, key)
+      return target[key]
+    },
+    set(target, key, value) {
+      target[key] = value
+      trigger(target, key)
+      return true
+    }
+  })
+
+  // 为了解决嵌套的effect，使activeEffect指向内层的effect后无法恢复指向外层的effect
+  // 维护一个effectStack执行栈，让activeEffect始终指向栈的顶层，保证activeEffect始终是当前执行的effect函数
+  const effectStack = []
+  // 负责注册并执行副作用函数
+  function effect(fn, options) {
+    // 这里为什么又要创建一个新的函数呢
+    // 因为要在上面添加deps属性，不能污染传入的fn
+    function effectFn() {
+      // 避免同一个副作用函数同时读取和写入引发无限递归
+      // 改成在trigger中判断
+      // if(activeEffect === effectFn) {
+      //   return
+      // }
+      // 每次执行前先将副作用函数从依赖集合中清除
+      cleanup(effectFn)
+      activeEffect = effectFn
+      // 将当前执行的函数压入栈中
+      effectStack.push(effectFn)
+      // 执行副作用函数
+      fn()
+      // 执行完成后将副作用函数出栈，让activeEffect指向外层的effect
+      effectStack.pop()
+      activeEffect = effectStack.at(-1)
+    }
+    // 添加选项，包含scheduler调度执行
+    effectFn.options = options
+    // 创建一个数组，收集依赖这个副作用的集合
+    effectFn.deps = []
+    effectFn()
+  }
+
+  // 清除集合中依赖的副作用函数
+  function cleanup(fn) {
+    for(let i = 0; i < fn.deps.length; i++) {
+      const deps = fn.deps[i]
+      deps.delete(fn)
+    }
+    // 清空数组
+    fn.deps.length = 0
+  }
+
+  // 追踪副作用
+  function track(target, key) {
+    // 如果没有effect函数，直接返回
+    if(!activeEffect) {
+      return target[key]
+    }
+    // 根据对象target找到对应的depsMaps
+    if(!bucket.get(target)) {
+      bucket.set(target, new Map())
+    }
+    const depsMap = bucket.get(target)
+    // 根据属性key找到对应的deps
+    if(!depsMap.get(key)) {
+      depsMap.set(key, new Set())
+    }
+    const deps = depsMap.get(key)
+    // 收集依赖
+    deps.add(activeEffect)
+    // 在收集依赖的时候，副作用函数也在收集依赖它的集合
+    activeEffect.deps.push(deps)
+  }
+
+  // 触发副作用
+  function trigger(target, key) {
+    const depsMap = bucket.get(target)
+    if (!depsMap) {
+      return true
+    }
+    const effects = depsMap.get(key)
+    if (!effects) {
+      return true
+    }
+    const effectsToRun = new Set()
+    // 避免同一个副作用函数同时读取和写入引发无限递归
+    effects.forEach((fn) => {
+      if(activeEffect !== fn) {
+        effectsToRun.add(fn)
+      }
+    })
+    effectsToRun.forEach((fn) => {
+      if(fn.options.scheduler) {
+        // 如果有调度器，调度执行
+        fn.options.scheduler(fn)
+      } else {
+        fn()
+      }
+    })
+    return true
+  }
+
+
+  effect(
+          () => {console.log(obj.bar)},
+          // 添加options.scheduler调度器
+          {
+            scheduler(fn) {
+                setTimeout(() => fn(), 2000)
+            }
+          }
+  )
+  obj.bar++;
+  console.log('结束了')
+</script>
+</body>
+</html>

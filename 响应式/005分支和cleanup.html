@@ -75,7 +75,10 @@
       if (!deps) {
         return true
       }
-      deps.forEach((fn) => fn())
+      // 解决执行的时候effect不断被add进集合导致forEach无限循环的问题
+      // 创建一个新的set执行
+      const depsToRun = new Set(deps)
+      depsToRun.forEach((fn) => fn())
       return true
     }
 
@@ -96,7 +99,7 @@
     setTimeout(() => {
       obj.notExist = 'Goodbye World!' // 不会触发effect
       obj.ok = false
-      obj.text = 'Goodbye World!'
+      obj.text = 'Goodbye World!' // 不会触发effect
     }, 2000)
 </script>
 </body>
