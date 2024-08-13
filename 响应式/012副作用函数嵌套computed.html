@@ -57,7 +57,7 @@
     // 创建一个数组，收集依赖这个副作用的集合
     effectFn.deps = []
     // 根据options.lazy的状态判断是否要执行
-    if(effectFn.options && !effectFn.options.lazy) {
+    if(!effectFn.options?.lazy) {
       effectFn()
     }
     // 执行effect的时候获取到副作用函数
@@ -115,7 +115,7 @@
       }
     })
     effectsToRun.forEach((fn) => {
-      if(fn.options.scheduler) {
+      if(fn.options?.scheduler) {
         // 如果有调度器，调度执行
         fn.options.scheduler(fn)
       } else {
