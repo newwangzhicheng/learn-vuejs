@@ -57,7 +57,7 @@
     // 创建一个数组，收集依赖这个副作用的集合
     effectFn.deps = []
     // 根据options.lazy的状态判断是否要执行
-    if(!effectFn.options.lazy) {
+    if(!effectFn.options?.lazy) {
       effectFn()
     }
     // 执行effect的时候获取到副作用函数
@@ -115,7 +115,7 @@
       }
     })
     effectsToRun.forEach((fn) => {
-      if(fn.options.scheduler) {
+      if(fn.options?.scheduler) {
         // 如果有调度器，调度执行
         fn.options.scheduler(fn)
       } else {
@@ -125,21 +125,63 @@
     return true
   }
 
+  // 利用effect的scheduler实现watch
+  // 在副作用函数中读取响应式数据，建立effect和obj的联系
+  // obj改变的时候，会触发副作用，我们选择在调度器中执行watch的回调，不触发副作用
+
+  // 执行副作用函数可以拿到监听的对象/属性的值
+  // 利用lazy选择在注册effect后执行一次副作用函数可以拿到oldVal
+  // 由于属性变化会执行调度器，在调度器执行回调cb前再度调用副作用函数就可以拿到最新值newVal
+  // 回调执行结束后更新一下oldVal
+  function watch(source, cb) {
+    // 如果source是一个函数，直接执行函数，建立对象某个属性和effect的联系
+    // 如果source是一个对象，对它的每个属性递归读取，建立effect和obj每个属性的联系
+    // 统一行为
+    let getter
+    let oldVal
+    let newVal
+    if (typeof source === 'function') {
+      getter = source
+    } else {
+      getter = () => traverse(source)
+    }
+    const effectFn = effect(
+      () => getter(),
+      {
+        // 选择手动执行副作用函数
+        lazy: true,
+        scheduler() {
+          // 属性更新后，回调函数执行前获取最新值
+          newVal = effectFn()
+          cb(newVal, oldVal)
+          // 更新oldVal
+          oldVal = newVal
+        }
+      }
+    )
+    // 获取oldVal
+    oldVal = effectFn()
+  }
+
+  // 递归遍历对象读取属性
+  function traverse(source, seen = new Set()) {
+    if(typeof source === null || typeof source !== 'object' || seen.has(source)) {
+      return
+    }
+    seen.add(source)
+    for(let i in source) {
+      traverse(source[i], seen)
+    }
+    // 读取操作
+    return source
+  }
 </script>
 <script>
-  let effectFn = effect(
-    () => {
-      console.log('执行了副作用函数')
-      return obj.foo + obj.bar
-    },
-    {
-      lazy: false
-    }
-  )
-  setTimeout(() => {
-    const value = effectFn()
-    console.log('value', value)
-  }, 2000)
+  watch(() => obj.foo, (newVal, oldVal) => {
+    console.log('newVal', newVal)
+    console.log('oldVal', oldVal)
+  })
+  obj.foo++ // 执行回调
 </script>
 </body>
 </html>
