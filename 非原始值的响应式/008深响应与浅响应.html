@@ -264,21 +264,15 @@
   }
 </script>
 <script>
-  const child = {}
-  const parent = {
-    foo: 1
-  }
-  const childRef = reactive(child)
-  const parentRef = reactive(parent)
-
-  Object.setPrototypeOf(childRef, parentRef)
-  effect(() => {
-    console.log('childRef', childRef.foo)
+  const ref = reactive({
+    foo: {
+      bar: 1
+    }
   })
-  // 这个连续触发了两次，set拦截了两次
-  // 因为不仅是有childRef.foo的读取操作，收集了依赖
-  // 还会触发parentRef.foo的读取操作，收集了依赖
-  childRef.foo = 2
+  effect(() => {
+    console.log('childRef', ref.foo.bar)
+  })
+  ref.foo.bar = 2
 </script>
 </body>
 </html>

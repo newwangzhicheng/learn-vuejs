@@ -51,7 +51,7 @@
       const oldValue = target[key]
       Reflect.set(target, key, value, receiver)
       // 判断新旧值，如果相同就不应触发
-      if (value !== oldValue && !(isNaN(oldValue) && isNaN(value))) {
+      if (value !== oldValue && (value === value || oldValue === oldValue)) {
         trigger(target, key, type)
       }
       return true
