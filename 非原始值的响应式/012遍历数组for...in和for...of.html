@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+</head>
+<body>
+<script>
+  let activeEffect
+  // 最外层的桶
+  const bucket = new WeakMap()
+
+  // 用于当for...in操作的key
+  const ITERATE_KEY = Symbol()
+  // object的触发类型，如果是修改属性，那for...in读取关联的effect不应该执行
+  const TriggerType = {
+    SET: 'SET',
+    ADD: 'ADD',
+    DELETE: 'DELETE'
+  }
+  function createReactive(object, isShallow = false, isReadonly = false) {
+    return new Proxy(object, {
+      // track
+      get(target, key, receiver) {
+        // 为了判断receiver是否是target的代理，把原始对象挂载到属性raw上
+        if(key === 'raw') {
+          return target
+        }
+        // 使用Reflect正确设置接收对象
+        const res = Reflect.get(target, key, receiver)
+        // 只读的对象不应该建立响应式
+        // for...of不追踪Symbol.iterator，改用追踪length
+        if(!isReadonly && (typeof key !== 'symbol')) {
+          track(target, key)
+        }
+
+        if(isShallow) {
+          return res
+        }
+        if(res !== null && typeof res === 'object') {
+          // 递归的实现深响应
+          // 必须要return出去
+          // readonly应该具有传递性
+          return isReadonly ? readonly(res) : reactive(res)
+        }
+        return res
+      },
+      // in操作符使用了内部[[HasProperty]]方法，可以用has拦截
+      has(target, value) {
+        track(target, value)
+        return Reflect.has(target, value)
+      },
+      // for...in读取操作可以使用ownKeys拦截
+      ownKeys(target) {
+        // 当新增元素和修改数组length的时候，应该拦截数组的for...in
+        // 上面两种操作都会改变length，所以只要可以数组的length和for...in操作的副作用函数建立响应式联系
+        track(target, Array.isArray(target) ? 'length' : ITERATE_KEY)
+        return Reflect.ownKeys(target)
+      },
+
+      // trigger
+      set(target, key, newValue, receiver) {
+        // 尝试改变/新增readonly属性的对象时，告警
+        if(isReadonly) {
+          console.log(`只读的${key}无法修改`)
+          return true
+        }
+        // 在set中判断操作是add还是set
+        // 如果是修改属性，for...in相关的副函数就不应该触发
+
+        // 如果设置set的是数组，且下标超过了长度，则认为是add操作
+        // 否则判断是否拥有该属性
+        const type = Array.isArray(target)
+          ? Number(key) < target.length
+            ? TriggerType.SET
+            : TriggerType.ADD
+          : Object.prototype.hasOwnProperty.call(target, key)
+            ? TriggerType.SET
+            : TriggerType.ADD
+        // 先获取旧值
+        const oldValue = target[key]
+        Reflect.set(target, key, newValue, receiver)
+        // receiver是最初触发的对象，为child的代理childRef
+        // 第一次target是child，第二次target是parent
+        // 只要判断receiver是target的代理执行set，其他原型上执行的就跳过
+        if(target === receiver.raw) {
+          // 判断新旧值，如果相同就不应触发
+          if (newValue !== oldValue && (newValue === newValue || oldValue === oldValue)) {
+            // 引出第四个参数，触发的新值
+            // 对修改数组length而言，就是新的长度newLength
+            trigger(target, key, type, newValue)
+          }
+        }
+        return true
+      },
+
+      // 删除属性拦截
+      deleteProperty(target, key) {
+        // 尝试删除readonly属性的对象时，告警
+        if(isReadonly) {
+          console.log(`只读的${key}无法修改`)
+          return true
+        }
+        // 判断对象中是否有该属性
+        const hasKey = Object.prototype.hasOwnProperty.call(target, key)
+        const isDeleted = Reflect.deleteProperty(target, key)
+        // 只有成功删除了才track
+        if (hasKey && isDeleted) {
+          trigger(target, key, TriggerType.DELETE)
+        }
+        return isDeleted
+      }
+    })
+  }
+
+  // 利用工厂函数创建reactive和shallowReactive
+  function reactive(object) {
+    return createReactive(object)
+  }
+  function shallowReactive(object) {
+    return createReactive(object, true)
+  }
+  // 只读的对象
+  function readonly(object) {
+    return createReactive(object, false, true)
+  }
+  function shallowReadonly(object) {
+    return createReactive(object, true, true)
+  }
+
+  // 为了解决嵌套的effect，使activeEffect指向内层的effect后无法恢复指向外层的effect
+  // 维护一个effectStack执行栈，让activeEffect始终指向栈的顶层，保证activeEffect始终是当前执行的effect函数
+  const effectStack = []
+  // 负责注册并执行副作用函数
+  function effect(fn, options) {
+    // 这里为什么又要创建一个新的函数呢
+    // 因为要在上面添加deps属性，不能污染传入的fn
+    function effectFn() {
+      // 避免同一个副作用函数同时读取和写入引发无限递归
+      // 改成在trigger中判断
+      // if(activeEffect === effectFn) {
+      //   return
+      // }
+      // 每次执行前先将副作用函数从依赖集合中清除
+      cleanup(effectFn)
+      activeEffect = effectFn
+      // 将当前执行的函数压入栈中
+      effectStack.push(effectFn)
+      // 执行副作用函数
+      // 希望执行副作用函数的时候能够获取到副作用的返回值
+      const res = fn()
+      // 执行完成后将副作用函数出栈，让activeEffect指向外层的effect
+      effectStack.pop()
+      activeEffect = effectStack.at(-1)
+      return res
+    }
+    // 添加选项，包含scheduler调度执行
+    effectFn.options = options
+    // 创建一个数组，收集依赖这个副作用的集合
+    effectFn.deps = []
+    // 根据options.lazy的状态判断是否要执行
+    if(!effectFn.options?.lazy) {
+      effectFn()
+    }
+    // 执行effect的时候获取到副作用函数
+    // 以便于手动触发
+    return effectFn
+  }
+
+  // 清除集合中依赖的副作用函数
+  function cleanup(fn) {
+    for(let i = 0; i < fn.deps.length; i++) {
+      const deps = fn.deps[i]
+      deps.delete(fn)
+    }
+    // 清空数组
+    fn.deps.length = 0
+  }
+
+  // 追踪副作用
+  function track(target, key) {
+    // 如果没有effect函数，直接返回
+    if(!activeEffect) {
+      return target[key]
+    }
+    // 根据对象target找到对应的depsMaps
+    if(!bucket.get(target)) {
+      bucket.set(target, new Map())
+    }
+    const depsMap = bucket.get(target)
+    // 根据属性key找到对应的deps
+    if(!depsMap.get(key)) {
+      depsMap.set(key, new Set())
+    }
+    const deps = depsMap.get(key)
+    // 收集依赖
+    deps.add(activeEffect)
+    // 在收集依赖的时候，副作用函数也在收集依赖它的集合
+    activeEffect.deps.push(deps)
+  }
+
+  /**
+   * 触发副作用
+   * @param target
+   * @param key
+   * @param type 触发类型
+   * @param newValue 新的target[key]，数组中是新的长度
+   * @returns {boolean}
+   */
+  function trigger(target, key, type, newValue) {
+    const depsMap = bucket.get(target)
+    if (!depsMap) {
+      return true
+    }
+    const effects = depsMap.get(key)
+    const effectsToRun = new Set()
+    effects && effects.forEach((fn) => {
+      // 避免同一个副作用函数同时读取和写入引发无限递归
+      if(activeEffect !== fn) {
+        effectsToRun.add(fn)
+      }
+    })
+    // 如果是数组且操作length，那么应该取出所有>=newLength的下标，触发它们的副作用函数
+    // for...of使用了迭代器，会读取数组的长度，所以只要length和副作用函数建立联系就能追踪for...of
+    if(Array.isArray(target) && key === 'length') {
+      depsMap.forEach((indexEffects, index) => {
+        if (index >= newValue) {
+          indexEffects && indexEffects.forEach((fn) => {
+            if(activeEffect !== fn) {
+              effectsToRun.add(fn)
+            }
+          })
+        }
+      })
+    }
+    // 如果是数组且有add操作，那么数组length属性相关的依赖也应该取出来触发
+    if(Array.isArray(target) && type === TriggerType.ADD) {
+      const lengthEffects = depsMap.get('length')
+      lengthEffects && lengthEffects.forEach((fn) => {
+        if(activeEffect !== fn) {
+          effectsToRun.add(fn)
+        }
+      })
+    }
+    // 只有添加/删除属性操作会触发or...in相关的副函数
+    if(type === TriggerType.ADD || type === TriggerType.DELETE) {
+      // 如果有for...in的key被收集了，也需要取出来触发
+      const iterateEffects = depsMap.get(ITERATE_KEY)
+      iterateEffects && iterateEffects.forEach((fn) => {
+        if(activeEffect !== fn) {
+          effectsToRun.add(fn)
+        }
+      })
+    }
+    effectsToRun.forEach((fn) => {
+      if(fn.options?.scheduler) {
+        // 如果有调度器，调度执行
+        fn.options.scheduler(fn)
+      } else {
+        fn()
+      }
+    })
+    return true
+  }
+
+  // 利用effect的scheduler实现watch
+  // 在副作用函数中读取响应式数据，建立effect和obj的联系
+  // obj改变的时候，会触发副作用，我们选择在调度器中执行watch的回调，不触发副作用
+
+  // 执行副作用函数可以拿到监听的对象/属性的值
+  // 利用lazy选择在注册effect后执行一次副作用函数可以拿到oldVal
+  // 由于属性变化会执行调度器，在调度器执行回调cb前再度调用副作用函数就可以拿到最新值newVal
+  // 回调执行结束后更新一下oldVal
+  function watch(source, cb, options) {
+    // 如果source是一个函数，直接执行函数，建立对象某个属性和effect的联系
+    // 如果source是一个对象，对它的每个属性递归读取，建立effect和obj每个属性的联系
+    // 统一行为
+    let getter
+    let oldVal
+    let newVal
+    if (typeof source === 'function') {
+      getter = source
+    } else {
+      getter = () => traverse(source)
+    }
+    // 为了解决竞态条件问题，可以在下一个回调函数执行的时候改变上一个函数的状态
+    // 上一个函数的状态可以在onInvalidate中改变，cleanup保存onInvalidate的回调
+    // 过期回调
+    let cleanup
+    const onInvalidate = (fn) => {
+      cleanup = fn
+    }
+    // 将scheduler打包成一个job，在不同的时机执行
+    const job = () => {
+      // 属性更新后，回调函数执行前获取最新值
+      newVal = effectFn()
+      // 如果有onInvalidate回调，执行。可以改变上一个回调的状态
+      if(cleanup) {
+        cleanup()
+      }
+      cb(newVal, oldVal, onInvalidate)
+      // 更新oldVal
+      oldVal = newVal
+    }
+    const effectFn = effect(
+      () => getter(),
+      {
+        // 选择手动执行副作用函数
+        lazy: true,
+        scheduler() {
+          if(options?.flush === 'post') {
+            Promise.resolve().then(() => job())
+          } else {
+            job()
+          }
+        }
+      }
+    )
+    if(options?.immediate) {
+      job()
+    } else {
+      // 获取oldVal
+      oldVal = effectFn()
+    }
+  }
+
+  // 递归遍历对象读取属性
+  function traverse(source, seen = new Set()) {
+    if(typeof source === null || typeof source !== 'object' || seen.has(source)) {
+      return
+    }
+    seen.add(source)
+    for(let i in source) {
+      traverse(source[i], seen)
+    }
+    // 读取操作
+    return source
+  }
+</script>
+<script>
+  // 修改数组的长度，新长度newLen，所有index >= newLen的下标都要触发副作用函数
+  const arr = reactive(['foo', 'bar', 'baz'])
+  effect(() => {
+    let sum = 0
+    for(let i in arr) {
+      sum += Number(i)
+    }
+    console.log('sum', sum)
+  })
+  arr[5] = 'qux'
+  arr.length = 2
+
+  // for...of本质是调用数组的迭代器Symbol.iterator，在get的时候避免追踪key是Symbol。用length来追踪
+  // for...of使用了迭代器，会读取数组的长度，所以只要length和副作用函数建立联系就能追踪for...of
+  const arr2 = reactive(['foo', 'bar', 'baz'])
+  effect(() => {
+    let sum2 = ''
+    for(let i of arr2) {
+      sum2 += i
+    }
+    console.log('sum2', sum2)
+  })
+  arr2[5] = 'qux'
+  arr2.length = 2
+</script>
+</body>
+</html>
