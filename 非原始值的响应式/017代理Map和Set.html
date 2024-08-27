@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+</head>
+<body>
+<script>
+  const s = new Set([1,2,3])
+  const p = new Proxy(s, {
+    get(target, key) {
+      // 因为代理对象receiver不存在[[SetData]]这个插槽，所以会报错
+      // 所以读取size的，将Reflect.get的this指向原始的对象s，s存在[[SetData]]插槽
+      if(key === 'size') {
+        return Reflect.get(target, key, target)
+      }
+      // delete是方法，所以使用bind将改变this指向
+      return target[key].bind(target)
+    }
+  })
+
+  console.log(p.size)
+
+  p.delete(3)
+  console.log(p)
+</script>
+</body>
+</html>
