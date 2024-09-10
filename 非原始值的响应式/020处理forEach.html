@@ -83,6 +83,19 @@
         // 新值不等于旧值，并且新值或旧值自身相等
         trigger(target, key, TriggerType.SET)
       }
+    },
+    forEach(cb, thisArgs) {
+      const wrap = (o) => (typeof o === 'object' && o !== null)
+        ? reactive(o)
+        : o
+      const target = this.raw
+      // forEach相关操作读取size，把它和迭代Symbol关联
+      track(target, ITERATE_KEY)
+      // 传进去的值也需要变成响应式的
+      // 还需要处理forEach的第二个参数，指定this
+      target.forEach((v, k) => {
+        cb.call(thisArgs, wrap(v), wrap(k), this)
+      })
     }
   }
   function createReactive(object) {
@@ -241,17 +254,20 @@
   }
 </script>
 <script>
-  const m = new Map()
-  const p1 = reactive(m)
-  const p2 = reactive(new Map())
-  p1.set('p2', p2)
+  const k = {key: 1}
+  const v = new Set([1,2,3])
+  const p = reactive(new Map([
+    [k, v]
+  ]))
 
   effect(() => {
-    console.log(m.get('p2').size)
+    p.forEach((v, k, m) => {
+      console.log('k', k)
+      console.log('v', v)
+    })
   })
 
-  // 原始值不应该触发响应式
-  m.get('p2').set('foo', 1)
+  p.get(k).delete(1)
 </script>
 </body>
 </html>
