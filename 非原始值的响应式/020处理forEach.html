@@ -232,8 +232,12 @@
         }
       })
     }
-    // 只有添加/删除属性操作会触发or...in相关的副函数
-    if(type === TriggerType.ADD || type === TriggerType.DELETE) {
+    // 只有添加/删除属性操作会触发for...in相关的副函数
+    // 如果是Map的forEach/for...in的SET操作可以改变值，所以需要触发相关联的ITERATE_KEY
+    if(type === TriggerType.ADD ||
+       type === TriggerType.DELETE ||
+       (type === TriggerType.SET && Object.prototype.toString.call(target) === '[object Map]')
+    ) {
       // 如果有for...in的key被收集了，也需要取出来触发
       const iterateEffects = depsMap.get(ITERATE_KEY)
       iterateEffects && iterateEffects.forEach((fn) => {
@@ -262,12 +266,22 @@
 
   effect(() => {
     p.forEach((v, k, m) => {
-      console.log('k', k)
-      console.log('v', v)
+      console.log('v.size', v.size)
     })
   })
 
-  p.get(k).delete(1)
+  p.get(k).delete(1) // 触发
+  p.set(k, 2) // 不触发，因为Set不会改变一个对象键的数量
+
+  const m = reactive(new Map([
+          ['key', 1]
+  ]))
+  effect(() => {
+    m.forEach((v) => {
+      console.log('m.value', v)
+    })
+  })
+  m.set('key', 2)
 </script>
 </body>
 </html>
