@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <script src="https://unpkg.com/@vue/reactivity@3.0.5/dist/reactivity.global.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      // 为了脱离浏览器环境，将DOM相关的操作抽象出来
+      // 为其他平台渲染铺垫
+      const options = {
+        createElement(type) {
+          return document.createElement(type);
+        },
+        setElementText(el, text) {
+          el.textContent = text;
+        },
+        insert(el, parent, anchor = null) {
+          parent.insertBefore(el, anchor);
+        },
+      };
+      // 创建渲染器
+      function createRenderer(options) {
+        const { createElement, setElementText, insert } = options;
+        function mountElement(node, container) {
+          const el = createElement(node.type);
+          if (typeof node.children === "string") {
+            // 文本节点
+            setElementText(el, node.children);
+          } else if(Array.isArray(node.children)) {
+            for(const child of node.children) {
+              // 挂载阶段没有旧的节点，所以是null
+              // 孙子节点的父节点就是刚刚创建的节点
+              patch(null, child, el)
+            }
+          }
+          insert(el, container);
+        }
+        // 更新，挂载节点
+        function patch(oldNode, newNode, container) {
+          if (!oldNode) {
+            // mount挂载
+            mountElement(newNode, container);
+          } else {
+            // update更新
+          }
+        }
+        /**
+         * vnode 虚拟节点
+         * container dom容器
+         * render负责将虚拟节点patch到container上
+         * 可以是挂载，更新，清空
+         *
+         */
+        function render(vnode, container) {
+          if (vnode) {
+            // 如果新节点存在，则执行挂载，更新操作
+            // 旧节点，新节点，容器
+            patch(container._vnode, vnode, container);
+          } else {
+            // 新节点不存在，直接清空
+            container.innerHTML = "";
+          }
+          container._vnode = vnode;
+          // 将节点保存到_vnode变量中
+        }
+        return {
+          render,
+        };
+      }
+    </script>
+    <script>
+      const node = {
+        type: "h1",
+        children: [
+          {
+            type: 'p',
+            children: 'this is content'
+          },
+          {
+            type: 'p',
+            children: 'this is content2'
+          }
+        ]
+      };
+      const renderer = createRenderer(options);
+      renderer.render(node, document.getElementById("app"));
+    </script>
+  </body>
+</html>

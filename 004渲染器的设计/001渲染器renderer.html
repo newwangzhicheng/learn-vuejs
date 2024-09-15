@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <script src="https://unpkg.com/@vue/reactivity@3.0.5/dist/reactivity.global.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      // 创建渲染器
+      function createRenderer() {
+        function mountElement(node, container) {
+          const el = document.createElement(node.type)
+            if(typeof node.children === 'string') {
+              // 文本节点
+              el.textContent = node.children
+            }
+            container.appendChild(el)
+        }
+        // 更新，挂载节点
+        function patch(oldNode, newNode, container) {
+          if(!oldNode) {
+            // mount挂载
+            mountElement(newNode, container)
+          } else {
+            // update更新
+          }
+        }
+        /**
+         * vnode 虚拟节点
+         * container dom容器
+         * render负责将虚拟节点patch到container上
+         * 可以是挂载，更新，清空
+         *
+        */
+        function render(vnode, container) {
+          if(vnode) {
+            // 如果新节点存在，则执行挂载，更新操作
+            // 旧节点，新节点，容器
+            patch(container._vnode, vnode, container)
+          } else {
+            // 新节点不存在，直接清空
+            container.innerHTML = ''
+          }
+          container._vnode = vnode
+          // 将节点保存到_vnode变量中
+        }
+        return {
+          render
+        }
+      }
+    </script>
+    <script>
+      const node = {
+        type: 'h1',
+        children: 'hello world'
+      }
+      const renderer = createRenderer()
+      renderer.render(node, document.getElementById('app'))
+    </script>
+  </body>
+</html>
