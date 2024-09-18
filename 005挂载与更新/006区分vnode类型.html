@@ -32,15 +32,16 @@
         patchProps(el, key, prevValue, nextValue) {
           // HTML attributes的作用就是设置与之对应的DOM properties的初始值
           // 优先设置DOM properties，如果不存在设置HTML attributes
-          if (key in el) {
-            const type = typeof el[key];
+          // HTML attributes的作用就是设置与之对应的DOM properties的初始值
+          // 优先设置DOM properties，如果不存在设置HTML attributes
+           if (key === "class") {
             // 针对class，可以用properties的className，classList和setAttributes设置
             // 其中className的性能最高
-            if (key === "class") {
-              el.className = nextValue || "";
-            }
+            el.className = nextValue || "";
+          } else if (shouldSetAsProps(el, key, nextValue)) {
             // 将是否使用props抽离成方法
-            if (shouldSetAsProps(el, key, nextValue)) {
+            const type = el[key]
+            if (typeof type === 'boolean' && value === '') {
               // 如果属性本身是boolean类型，并且值为空，修正为true
               // 如disabled
               el[key] = true;
