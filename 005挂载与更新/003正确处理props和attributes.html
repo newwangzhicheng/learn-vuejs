@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <script src="https://unpkg.com/@vue/reactivity@3.0.5/dist/reactivity.global.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      function shouldSetAsProps(el, key, value) {
+        // 针对form等只读属性，应该使用setAttribute
+        if(el.tagName === 'INPUT' && key === 'form') {
+          return false
+        }
+        return key in el
+      }
+      // 为了脱离浏览器环境，将DOM相关的操作抽象出来
+      // 为其他平台渲染铺垫
+      const options = {
+        createElement(type) {
+          return document.createElement(type);
+        },
+        setElementText(el, text) {
+          el.textContent = text;
+        },
+        insert(el, parent, anchor = null) {
+          parent.insertBefore(el, anchor);
+        },
+        patchProps(el, key, prevValue, nextValue) {
+          // HTML attributes的作用就是设置与之对应的DOM properties的初始值
+          // 优先设置DOM properties，如果不存在设置HTML attributes
+          if(key in el) {
+            const type = typeof el[key]
+            // 将是否使用props抽离成方法
+            if(shouldSetAsProps(el, key, nextValue)) {
+              // 如果属性本身是boolean类型，并且值为空，修正为true
+              // 如disabled
+              el[key] = true
+            } else {
+              el[key] = nextValue
+            }
+          } else {
+            el.setAttribute(key, nextValue)
+          }
+        }
+      };
+      // 创建渲染器
+      function createRenderer(options) {
+        const { createElement, setElementText, insert, patchProps } = options;
+        function mountElement(node, container) {
+          const el = createElement(node.type);
+          if (typeof node.children === "string") {
+            // 文本节点
+            setElementText(el, node.children);
+          } else if(Array.isArray(node.children)) {
+            node.children.forEach(child => {
+              // 挂载阶段没有旧的节点，所以是null
+              // 孙子节点的父节点就是刚刚创建的节点
+              patch(null, child, el)
+            });
+          }
+          if(node.props) {
+            for(const key in node.props) {
+              patchProps(el, key, null, node.props[key])
+            }
+          }
+          insert(el, container);
+        }
+        // 更新，挂载节点
+        function patch(oldNode, newNode, container) {
+          if (!oldNode) {
+            // mount挂载
+            mountElement(newNode, container);
+          } else {
+            // update更新
+          }
+        }
+        /**
+         * vnode 虚拟节点
+         * container dom容器
+         * render负责将虚拟节点patch到container上
+         * 可以是挂载，更新，清空
+         *
+         */
+        function render(vnode, container) {
+          if (vnode) {
+            // 如果新节点存在，则执行挂载，更新操作
+            // 旧节点，新节点，容器
+            patch(container._vnode, vnode, container);
+          } else {
+            // 新节点不存在，直接清空
+            container.innerHTML = "";
+          }
+          container._vnode = vnode;
+          // 将节点保存到_vnode变量中
+        }
+        return {
+          render,
+        };
+      }
+    </script>
+    <script>
+      const node = {
+        type: "h1",
+        props: {
+          id: 'hhhh'
+        },
+        children: [
+          {
+            type: 'p',
+            props: {
+              id: 'pppp'
+            },
+            children: 'this is content'
+          },
+          {
+            type: 'p',
+            children: 'this is content2'
+          },
+          {
+            type: 'button',
+            // template中<button disabled></button> 其中的disabled会被解析为空字符串
+            // 所以要被解析为true
+            props: {
+              disabled: ''
+            },
+            children: '禁用的按钮',
+          }
+        ]
+      };
+      const renderer = createRenderer(options);
+      renderer.render(node, document.getElementById("app"));
+    </script>
+  </body>
+</html>
