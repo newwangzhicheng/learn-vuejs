@@ -17,6 +17,7 @@
 <script>
   const Text = Symbol()
   const Comment = Symbol()
+  const Fragment = Symbol()
 
   function shouldSetAsProps(el, key, value) {
     // 针对form等只读属性，应该使用setAttribute
@@ -119,6 +120,11 @@
 
     // 卸载节点
     function unmount(vnode) {
+      // 如果是Fragment，需要逐个卸载
+      if(vnode.type === Fragment) {
+        vnode.children.forEach((node) => unmount(node))
+        return
+      }
       const el = vnode.el;
       // 获取父节点，然后卸载
       const parentNode = el.parentNode;
@@ -215,7 +221,7 @@
         unmount(oldNode);
         oldNode = null;
       }
-      const { type } = newNode;
+      const {type} = newNode;
       if (typeof type === "string") {
         // 字符串类型
         if (!oldNode) {
@@ -227,34 +233,47 @@
           patchElement(oldNode, newNode)
         }
       } else if (type === Text) {
-        if(!oldNode) {
+        // 文本节点
+        if (!oldNode) {
           // 旧的节点不存在，创建
           const el = newNode.el = createText(newNode.children)
           insert(el, container)
         } else {
           // 旧的节点存在，替换文本
           const el = newNode.el = oldNode.el
-          if(newNode.children !== oldNode.children) {
+          if (newNode.children !== oldNode.children) {
             // 文本节点才会有nodeValue值
             setText(el, newNode.children)
           }
         }
       } else if (type === Comment) {
-        if(!oldNode) {
+        // 注释节点
+        if (!oldNode) {
           // 旧的节点不存在，创建
           const el = newNode.el = createComment(newNode.children)
           insert(el, container)
         } else {
           // 旧的节点存在，替换文本
           const el = newNode.el = oldNode.el
-          if(newNode.children !== oldNode.children) {
+          if (newNode.children !== oldNode.children) {
             // 文本节点才会有nodeValue值
             setComment(el, newNode.children)
           }
         }
+      } else if (type === Fragment) {
+        // fragment节点
+        if(!oldNode) {
+          // 旧的节点不存在，逐个挂载
+          newNode.children.forEach((node) => {
+            patch(oldNode, node, container)
+          })
+        } else {
+          // 旧的节点存在, 更新子元素
+          patchChildren(oldNode, newNode, container)
+        }
       } else if (typeof type === "object") {
         // 组件类型
-      } else if (type === "fragment") {
+      } else if (type === "xxx") {
         // 特殊类型
       }
     }
@@ -288,46 +307,40 @@
 </script>
 <script>
   const {effect, ref} = VueReactivity
-  const bol = ref(false)
-
+  const bol = ref(true)
   effect(() => {
     const node = {
-      type: 'div',
-      props: bol.value ? {
-        onClick() {
-          console.log('点击父元素')
-        }
-      } : {},
+      type: 'ul',
       children: [
         {
-          type: 'p',
-          children: '子元素',
-          props: {
-            onClick() {
-              bol.value = true
-              console.log('点击子元素')
+          type: Fragment,
+          children: bol.value ? [
+            {
+              type: 'li',
+              children: '一'
+            },
+            {
+              type: 'li',
+              children: '二'
+            },
+            {
+              type: 'li',
+              children: '三'
             }
-          }
-        },
-        {
-          type: Text,
-          children: '这是文本节点',
-          props: {
-            onClick() {
-              bol.value = true
-              console.log('点击文本节点')
+          ] : [
+            {
+              type: 'li',
+              children: '四'
             }
-          }
-        },
-        {
-          type: Comment,
-          children: '这是comment节点'
+          ]
         }
       ]
     }
     const renderer = createRenderer(options)
     renderer.render(node, document.querySelector('#app'))
   })
+
+  setTimeout(() => bol.value = false, 3000)
 </script>
 </body>
 </html>
