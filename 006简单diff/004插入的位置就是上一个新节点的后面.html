@@ -202,7 +202,14 @@
               if (newChild.key === oldChild.key) {
                 patch(oldChild, newChild, container)
                 if(j < lastIndex) {
-                  // should move
+                  // 节点应该移动的位置就是上一个新节点的后面
+                  const prevChild = newNode.children[i - 1]
+                  // 如果上一个节点不存在，说明该节点不需要移动
+                  if(prevChild) {
+                    // 找到上一个节点的兄弟节点，即锚点
+                    const anchor = prevChild.el.nextSibling
+                    insert(newChild.el, container, anchor)
+                  }
                 } else {
                   lastIndex = j
                 }
